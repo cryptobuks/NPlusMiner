@@ -1,7 +1,7 @@
 <#
 This file is part of NPlusMiner
 Copyright (c) 2018 Nemo
-Copyright (c) 2018 MrPlus
+Copyright (c) 2018-2019 MrPlus
 
 NPlusMiner is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -20,29 +20,43 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 <#
 Product:        NPlusMiner
 File:           include.ps1
-version:        5.1.0
-version date:   20181223
+version:        5.4.1
+version date:   20190809
 #>
  
 # New-Item -Path function: -Name ((Get-FileHash $MyInvocation.MyCommand.path).Hash) -Value {$true} -EA SilentlyContinue | out-null
 # Get-Item function::"$((Get-FileHash $MyInvocation.MyCommand.path).Hash)" | Add-Member @{"File" = $MyInvocation.MyCommand.path} -EA SilentlyContinue
 
 function Get-MemoryUsage {
-      $memusagebyte = [System.GC]::GetTotalMemory('forcefullcollection')
-      $memusageMB = $memusagebyte / 1MB
-      $diffbytes = $memusagebyte - $script:last_memory_usage_byte
-      $difftext = ''
-      $sign = ''
-      if ( $script:last_memory_usage_byte -ne 0 ) {
-            if ( $diffbytes -ge 0 ) {
-                $sign = '+'
-            }
-            $difftext = ", $sign$diffbytes"
+      # $memusagebyte = [System.GC]::GetTotalMemory('forcefullcollection')
+      # $memusageMB = $memusagebyte / 1MB
+      # $diffbytes = $memusagebyte - $script:last_memory_usage_byte
+      # $difftext = ''
+      # $sign = ''
+      # if ( $script:last_memory_usage_byte -ne 0 ) {
+            # if ( $diffbytes -ge 0 ) {
+                # $sign = '+'
+            # }
+            # $difftext = ", $sign$diffbytes"
+      # }
+# [System.GC]::Collect()
+      # Write-Host -Object ('Memory usage: {0:n1} MB ({1:n0} Bytes{2})' -f $memusageMB,$memusagebyte, $difftext)
+      # Write-Host " "
+      $P = get-process -PID $PID
+      If (!$Variables.PerfCounterProcPath) {
+        $proc_path=((Get-Counter "\Process(*)\ID Process").CounterSamples | ? {$_.RawValue -eq $pid}).Path  
+        $proc_path = $proc_path -replace "id process","Working Set - Private"
+        $Variables | Add-Member -Force @{PerfCounterProcPath = $proc_path}
       }
-      Write-Host -Object ('Memory usage: {0:n1} MB ({1:n0} Bytes{2})' -f $memusageMB,$memusagebyte, $difftext)
-      Write-Host " "
+      
+      # Write-Host -Object ('PagedMemorySize  : {0:n1} MB ' -f ($P.PagedMemorySize/1024))
+      # Write-Host -Object ('PrivateMemorySize: {0:n1} MB ' -f ($P.PrivateMemorySize/1024))
+      # Write-Host -Object ('VirtualMemorySize: {0:n1} MB ' -f ($P.VirtualMemorySize/1024))
+      # Write-Host -Object ('WorkingSetSize: {0:n1} MB ' -f ($P.WorkingSet/1024))
+      Write-Host -Object ('PrivatePageCount: {0:n1} MB ' -f (((Get-Counter $Variables.PerfCounterProcPath).CounterSamples[0]).RawValue/1mb))
+
       # save last value in script global variable
-      $script:last_memory_usage_byte = $memusagebyte
+      # $script:last_memory_usage_byte = $
 }
 
 Function GetNVIDIADriverVersion {

@@ -1,6 +1,6 @@
 <#
 This file is part of NPlusMiner
-Copyright (c) 2018 MrPlus
+Copyright (c) 2018-2019 MrPlus
 
 NPlusMiner is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -19,8 +19,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 <#
 Product:        NPlusMiner
 File:           NPlusMiner.ps1
-version:        5.1.0
-version date:   20190130
+version:        5.4.1
+version date:   20190809
 #>
 
 param(
@@ -88,7 +88,7 @@ param(
 
 @"
 NPlusMiner
-Copyright (c) 2018 MrPlus
+Copyright (c) 2018-2019 MrPlus
 
 This program comes with ABSOLUTELY NO WARRANTY.
 This is free software, and you are welcome to redistribute it
@@ -180,21 +180,23 @@ Function Global:TimerUITick
             If (Test-Path ".\Logs\switching.log"){$SwitchingArray = [System.Collections.ArrayList]@(@((get-content ".\Logs\switching.log" -First 1) , (get-content ".\logs\switching.log" -last 50)) | ConvertFrom-Csv | ? {$_.Type -in $SwitchingDisplayTypes} | Select -Last 13)}
             $SwitchingDGV.DataSource = $SwitchingArray
             
+            # Fixed memory leak to to chart object not being properly disposed in 5.3.0
+            # https://stackoverflow.com/questions/8466343/why-controls-do-not-want-to-get-removed
+
             If (Test-Path ".\logs\DailyEarnings.csv"){
-                If ($Chart1) {$RunPage.Controls.Remove($Chart1)}
                 $Chart1 = Invoke-Expression -Command ".\Includes\Charting.ps1 -Chart 'Front7DaysEarnings' -Width 505 -Height 85"
                 $Chart1.top = 74
                 $Chart1.left = 0
                 $RunPage.Controls.Add($Chart1)
                 $Chart1.BringToFront()
-            }
-            If (Test-Path ".\logs\DailyEarnings.csv"){
-                If ($Chart2) {$RunPage.Controls.Remove($Chart2)}
+
                 $Chart2 = Invoke-Expression -Command ".\Includes\Charting.ps1 -Chart 'DayPoolSplit' -Width 200 -Height 85"
                 $Chart2.top = 74
                 $Chart2.left = 500
                 $RunPage.Controls.Add($Chart2)
                 $Chart2.BringToFront()
+                
+                $RunPage.Controls | ? {($_.gettype()).name -eq "Chart" -and $_ -ne $Chart1 -and $_ -ne $Chart2} | % {$RunPage.Controls[$RunPage.Controls.IndexOf($_)].Dispose();$RunPage.Controls.Remove($_)}
             }
 
             If ($Variables.Earnings -and $Config.TrackEarnings) {
@@ -428,12 +430,28 @@ Function Global:TimerUITick
 Function Form_Load
 {
     $DblBuff = ($MainForm.GetType()).GetProperty("DoubleBuffered", ('Instance','NonPublic'))
-    $DblBuff.SetValue($MainForm, $Truen, $null)
+    $DblBuff.SetValue($MainForm, $True, $null)
 
     $MainForm.Text = "$($Branding.ProductLable) $($Variables.CurrentVersion)"
     $LabelBTCD.Text = "$($Branding.ProductLable) $($Variables.CurrentVersion)"
     $MainForm.Number = 0
-    $TimerUI.Add_Tick({TimerUITick})
+    $TimerUI.Add_Tick({
+        # Timer never disposes objects until it is disposed
+        $MainForm.Number = $MainForm.Number + 1
+        $TimerUI.Stop()
+        TimerUITick
+        If ($MainForm.Number -gt 6000) {
+            # Write-Host -B R "Releasing Timer"
+            $MainForm.Number = 0
+            # $TimerUI.Stop()
+            $TimerUI.Remove_Tick({TimerUITick})
+            $TimerUI.Dispose()
+            $TimerUI = New-Object System.Windows.Forms.Timer
+            $TimerUI.Add_Tick({TimerUITick})
+            # $TimerUI.Start()
+        }
+        $TimerUI.Start()
+    })
     $TimerUI.Interval = 50
     $TimerUI.Stop()
         
@@ -628,7 +646,7 @@ $TabControl = New-object System.Windows.Forms.TabControl
 
 Try{
     $DblBuff = ($TabControl.GetType()).GetProperty("DoubleBuffered", ('Instance','NonPublic'))
-    $DblBuff.SetValue($MainForm, $Truen, $null)
+    $DblBuff.SetValue($MainForm, $True, $null)
 } catch {}
 
 $RunPage = New-Object System.Windows.Forms.TabPage
@@ -821,7 +839,7 @@ $TabControl.Controls.AddRange(@($RunPage, $SwitchingPage, $ConfigPage, $Monitori
     $LabelCopyright.Size            = New-Object System.Drawing.Size(200,20)
     $LabelCopyright.LinkColor       = "BLUE"
     $LabelCopyright.ActiveLinkColor = "BLUE"
-    $LabelCopyright.Text            = "Copyright (c) 2018 MrPlus"
+    $LabelCopyright.Text            = "Copyright (c) 2018-2019 MrPlus"
     $LabelCopyright.add_Click({[system.Diagnostics.Process]::start("https://github.com/MrPlusGH/NPlusMiner/blob/master/LICENSE")})
     $RunPageControls += $LabelCopyright
 
@@ -848,7 +866,7 @@ $TabControl.Controls.AddRange(@($RunPage, $SwitchingPage, $ConfigPage, $Monitori
         # If ($_.GetType() -ne "System.Windows.Forms.DataGridView") {
             Try{
                 $DblBuff = ($_.GetType()).GetProperty("DoubleBuffered", ('Instance','NonPublic'))
-                $DblBuff.SetValue($MainForm, $Truen, $null)
+                $DblBuff.SetValue($MainForm, $True, $null)
             } catch {}
         # }
     }

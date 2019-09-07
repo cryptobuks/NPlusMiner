@@ -1,7 +1,7 @@
 <#
 This file is part of NPlusMiner
 Copyright (c) 2018 Nemo
-Copyright (c) 2018 MrPlus
+Copyright (c) 2018-2019 MrPlus
 
 NPlusMiner is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -20,8 +20,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 <#
 Product:        NPlusMiner
 File:           Core.ps1
-version:        5.1.0
-version date:   20190129
+version:        5.4.1
+version date:   20190809
 #>
 
 Function InitApplication {
@@ -206,7 +206,7 @@ $CycleTime = Measure-Command -Expression {
             }
         }
         if(((Get-Date).AddDays(-1) -ge $Variables.LastDonated -and $Variables.DonateRandom.Wallet -ne $Null) -or (! $Config.PoolsConfig)){
-            $Variables.StatusText = "EXITING DONATION"
+            If ($Variables.DonationRunning) {$Variables.StatusText = "EXITING DONATION"}
             $Variables | Add-Member -Force @{ DonationRunning = $False }
             $ConfigLoad = Get-Content $Config.ConfigFile | ConvertFrom-json
             $ConfigLoad | % {$_.psobject.properties | sort Name | % {$Config | Add-Member -Force @{$_.Name = $_.Value}}}
@@ -311,7 +311,9 @@ $CycleTime = Measure-Command -Expression {
         $Variables.StatusText = "Loading miners.."
         $Variables | Add-Member -Force @{Miners = @()}
         $StartPort=4068
-
+    
+    # Better load here than in miner file. Reduces disk reads.
+    $MinersConfig = If (Test-Path ".\Config\MinersConfig.json") { Get-content ".\Config\MinersConfig.json" | convertfrom-json }
     $Variables.Miners = if (Test-Path "Miners") {
         @(
             Get-ChildItemContent "Miners"
@@ -322,7 +324,18 @@ $CycleTime = Measure-Command -Expression {
             Where {!($Config.Algorithm | ? {$_.StartsWith("+")}) -or (Compare (($Config.Algorithm | ? {$_.StartsWith("+")}).Replace("+", "")) $_.HashRates.PSObject.Properties.Name -IncludeEqual -ExcludeDifferent | Measure).Count -gt 0} | 
             Where {$Config.MinerName.Count -eq 0 -or (Compare $Config.MinerName $_.Name -IncludeEqual -ExcludeDifferent | Measure).Count -gt 0}
     }
+    
+    # 5.2.1
+    # Added sceurity to filter miners with no user name in case of malformed miner or pool file
+    $Variables.Miners = $Variables.Miners | ? {$_.User}
 
+    # 5.2.1
+    # Exclude non benchmarked during donation.
+    If ($Variables.DonationRunning) {
+        $Variables.Miners = $Variables.Miners | ? {$_.HashRates.Psobject.properties.value}
+    }
+
+    
         # Ban miners if too many failures as defined by MaxMinerFailure
         # 0 means no ban
         # Int value means ban after x failures
@@ -680,7 +693,11 @@ $CycleTime = Measure-Command -Expression {
 }
     # $Variables.StatusText = "Cycle Time (seconds): $($CycleTime.TotalSeconds)"
     "Cycle Time (seconds): $($CycleTime.TotalSeconds)" | out-host
-    $Variables.StatusText = "Waiting $($Variables.TimeToSleep) seconds... | Next refresh: $((Get-Date).AddSeconds($Variables.TimeToSleep))"
+    If ($variables.DonationRunning) {
+        $Variables.StatusText = "Waiting $($Variables.TimeToSleep) seconds... | Next refresh: $((Get-Date).AddSeconds($Variables.TimeToSleep)) | Donation cycle. Thanks for your support!"
+    } else {
+        $Variables.StatusText = "Waiting $($Variables.TimeToSleep) seconds... | Next refresh: $((Get-Date).AddSeconds($Variables.TimeToSleep))"
+    }
     $Variables | Add-Member -Force @{EndLoop = $True}
     # Sleep $Variables.TimeToSleep
     # }
